@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Display Vidéos</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: black;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        video {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: cover;
+        }
+    </style>
+</head>
+<body>
+<video id="video-player" autoplay>
+    <source src="./videos/video1.mp4" type="video/mp4">
+    Votre navigateur ne supporte pas les vidéos HTML5.
+</video>
+
+<script src="https://cdn.socket.io/4.8.0/socket.io.min.js"></script>
+<script>
+    const socket = io("ws://localhost:8080");
+
+    const videoPlayer = document.querySelector('#video-player');
+    const videos = ["video2.mp4", "video3.mp4", "video4.mp4", "test.mp4"];
+    const standbyVideo = "video1.mp4";
+
+    const videoQueue = [];
+    let isStandbyMode = true; // isVeille ?
+    let inactivityTimeout;
+    let inactivityTimer = 30000; // 30sec Veille
+    let waitForVideoEnd = false;
+
+    const getRandomVideo = (exclude) => {
+        const filteredVideos = videos.filter((video) => video !== exclude);
+        return filteredVideos[Math.floor(Math.random() * filteredVideos.length)];
+    };
+    const playVideo = (video, loop = false) => {
+        videoPlayer.loop = loop;
+        videoPlayer.querySelector('source').src = `./videos/${video}`;
+        videoPlayer.load();
+        videoPlayer.play();
+    };
+
+    // actions
+    videoPlayer.addEventListener('ended', () => {
+        if (videoQueue.length > 0) {
+            const nextVideo = videoQueue.shift();
+            isStandbyMode = false;
+            playVideo(nextVideo, false);
+        } else if (waitForVideoEnd) {
+            waitForVideoEnd = false;
+            isStandbyMode = true;
+            playVideo(standbyVideo, true);
+        } else if (inactivityTimer > 0) {
+            const currentVideo = videoPlayer.querySelector('source').src.split('/').pop();
+            const newVideo = getRandomVideo(currentVideo);
+            isStandbyMode = false;
+            playVideo(newVideo, false);
+        }
+    });
+    socket.on('notification', () => {
+        clearTimeout(inactivityTimeout); // Reset timer
+        inactivityTimer = 30000;
+
+        const currentVideo = videoPlayer.querySelector('source').src.split('/').pop();
+
+        if (currentVideo === standbyVideo) {
+            const newVideo = getRandomVideo(currentVideo);
+            isStandbyMode = false;
+            playVideo(newVideo, false);
+        } else {
+            const newVideo = getRandomVideo(currentVideo);
+            videoQueue.push(newVideo);
+        }
+
+        // back to video1 after 30sec
+        inactivityTimeout = setTimeout(() => {
+            inactivityTimer = 0;
+            waitForVideoEnd = true;
+        }, inactivityTimer);
+    });
+
+    playVideo(standbyVideo, true);
+
+    // back to video1 after 30sec
+    inactivityTimeout = setTimeout(() => {
+        inactivityTimer = 0;
+        waitForVideoEnd = true;
+    }, inactivityTimer);
+
+    // Documentation :
+    /*
+    La vidéo de veille (video1.mp4) est jouée en boucle.
+
+    Notification reçue :
+    - Si la vidéo actuelle est la vidéo de veille, elle est remplacée immédiatement par une vidéo non-veille aléatoire.
+    - Si une vidéo non-veille est en cours, une vidéo aléatoire est ajoutée à la liste d'attente.
+
+    Lecture en boucle de vidéos non-veille avant 30 secondes :
+    - Si aucune vidéo n'est en attente et que les 30 secondes d'inactivité ne sont pas écoulées, une vidéo non-veille différente est jouée automatiquement après chaque vidéo terminée.
+
+    Expiration des 30 secondes :
+
+    Une fois les 30 secondes écoulées sans nouvelle notification :
+    - Si une vidéo non-veille est en cours, elle continue jusqu'à sa fin avant de revenir à la veille.
+    - Si aucune vidéo n'est en cours (ou si une vidéo est en attente), la vidéo de veille est jouée.
+    */
+</script>
+</body>
+</html>
